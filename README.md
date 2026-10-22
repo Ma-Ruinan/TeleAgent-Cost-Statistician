@@ -4,6 +4,30 @@ TeleAgent专用的执行过程统计Skill。读取已经运行过的测试任务
 
 ## 使用
 
+### 自然语言安装（首次使用）
+
+```text
+请从 https://github.com/Ma-Ruinan/TeleAgent-Cost-Statistician 安装 teleagent-cost-statistician 技能。
+将仓库中的 skills/teleagent-cost-statistician 完整文件夹安装到当前 Agent 的技能目录，保留脚本和参考资料，并确认技能已被识别和启用。
+```
+
+### 自然语言调用
+
+替换尖括号中的内容，括号内仅为填写示例。
+
+```text
+请使用 teleagent-cost-statistician，收集 TeleAgent 已完成测试任务的执行过程数据。
+
+题目集目录：<题目集完整路径>（例如：E:\evaluation\题目集\维度1_信息检索与浏览）
+工作目录线索：<某次任务工作目录或批次父目录>（例如：E:\evaluation\TeleAgent\run-01）
+测试时间：<测试日期；不限定时填不限定>（例如：2026-10-21）
+结果保存目录：<结果目录完整路径>（例如：E:\evaluation\统计结果\TeleAgent）
+
+请根据工作目录线索定位同批次记录，找全上述题目集在指定时间范围内的各次运行。按技能要求统计九项指标及均值，生成 Excel 指标表、包含具体问题与日志证据的 Word 记录，并保留 JSON 核查数据。
+```
+
+### 命令行使用
+
 将 [skills/teleagent-cost-statistician](skills/teleagent-cost-statistician) 文件夹复制到所用Agent的技能目录。Codex可使用 `$CODEX_HOME/skills`，未配置时使用 `~/.codex/skills`。也可直接阅读 [SKILL.md](skills/teleagent-cost-statistician/SKILL.md) 并运行脚本。无需安装第三方Python库，要求Python 3.10及以上版本。
 
 ```powershell
