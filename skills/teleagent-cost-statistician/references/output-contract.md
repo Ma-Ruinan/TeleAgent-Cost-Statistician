@@ -1,6 +1,6 @@
 # 输出口径
 
-默认每个对象生成一个 Excel、一个 Word，以及本地回查用的执行数据 JSON。三份文件使用相同的测试ID关联。所有真实日志和结果保存在调用者指定的本地结果目录。
+默认每个对象生成一个 Excel、一个 Word，以及本地回查用的执行数据 JSON。三份文件使用相同的测试ID关联。所有真实日志和结果保存在本地结果目录；用户未指定时，由Agent在当前任务目录下创建统计结果/TeleAgent/采集时间。
 
 ## 九项指标
 
@@ -36,9 +36,9 @@ Token逐次显示四位小数，能够对应回整数Token；均值显示六位�
 
 Agent应阅读JSON后补充有依据的观察，必要时通过 report.py 的 --analysis 参数重新生成Word；补充JSON为按 run_id 组织的字符串数组字典。说明具体问题造成的已观察影响，推断注明依据。错误摘要只有弃用警告时，不直接认定警告是命令失败根因。正文用清晰中文，结合实例，避免双引号和破折号；回查JSON保留日志原文。
 
-## 需要人工核实的关联和页面证据
+## 经证据核实的关联和页面证据
 
-题目默认仅在去除空白后作完整匹配。WorkBuddy另去除末尾场景标签，但把标签保留为条件。改写的题目不自动模糊匹配。可用 --mapping 提供JSON数组，每项包含 session、user_message、task_id，以及 role=new 或 continue；映射须来自人工核实。
+题目默认仅在去除空白后作完整匹配。WorkBuddy另去除末尾场景标签，但把标签保留为条件。改写的题目不自动模糊匹配。可用 --mapping 提供JSON数组，每项包含 session、user_message、task_id，以及 role=new 或 continue；映射由Agent读取实际消息与题目资料核实后生成，并保留证据；不能可靠关联时记录排除原因，不向用户追问或猜测归属。
 
 页面证据通过 --observations 提供JSON数组。每项以 run_id、session、user_message 中一个或多个字段唯一定位测试，包含 page_status、page_response、evidence；实际确认拒答时可加 outcome=refused。证据来源必须明确，例如用户确认的页面回复。不能把页面显示已完成直接当作已交付，也不能把某题的一次观察套用到其他次。
 

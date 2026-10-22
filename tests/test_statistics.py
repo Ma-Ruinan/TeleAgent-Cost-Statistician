@@ -95,6 +95,52 @@ class StatisticsTests(unittest.TestCase):
             self.assertIsNone(z.testzip());E.fromstring(z.read('word/document.xml'))
             self.assertIn('LLM完成调用数',z.read('word/document.xml').decode())
 
+    def test_full_dataset_loads_questions_in_multiple_dimensions(self):
+        dataset=self.root/'dataset'
+        for dimension,tid,prompt in [('dimension1','W1','Find source one.'),('dimension2','D1','Create a document.')]:
+            folder=dataset/dimension/(tid+'_task');folder.mkdir(parents=True)
+            (folder/'问题描述.txt').write_text(prompt,encoding='utf8')
+        tasks=common.task_set(argparse.Namespace(tasks=str(dataset),task_manifest=None))
+        self.assertEqual({t['id'] for t in tasks},{'W1','D1'})
+        self.assertEqual({t['prompt'] for t in tasks},{'Find source one.','Create a document.'})
+
+    def test_workspace_without_date_keeps_cross_day_runs_and_excludes_other_workspaces(self):
+        path=self.wb_fixture() if adapter.PRODUCT=='WorkBuddy' else self.db_fixture()
+        other=self.root/'unrelated-workspace';other.mkdir()
+        shift=86400000
+        if adapter.PRODUCT=='WorkBuddy':
+            rows=[json.loads(line) for line in path.read_text(encoding='utf8').splitlines()]
+            for row in rows:
+                if row.get('timestamp',0)>=self.start+30000:row['timestamp']+=shift
+            path.write_text('\n'.join(json.dumps(row) for row in rows),encoding='utf8')
+            foreign=json.loads(json.dumps(rows))
+            for row in foreign:
+                row['sessionId']='outside'
+                if 'cwd' in row:row['cwd']=str(other)
+                if row.get('providerData',{}).get('usage'):row['providerData']['usage']['requests']=99
+            (self.root/'outside.jsonl').write_text('\n'.join(json.dumps(row) for row in foreign),encoding='utf8')
+            source=self.root
+        else:
+            c=sqlite3.connect(path)
+            for mid in ('u3','a3'):
+                row=c.execute('SELECT time_created,data FROM message WHERE id=?',(mid,)).fetchone()
+                data=json.loads(row[1])
+                for key in ('created','completed'):
+                    if key in data.get('time',{}):data['time'][key]+=shift
+                c.execute('UPDATE message SET time_created=?,data=? WHERE id=?',(row[0]+shift,json.dumps(data),mid))
+            c.execute("UPDATE part SET time_created=time_created+? WHERE message_id IN ('u3','a3')",(shift,))
+            c.execute('INSERT INTO session VALUES(?,?,?,?,?)',('outside',None,str(other),'Unrelated',self.start))
+            c.execute('INSERT INTO message SELECT id||?, ?,time_created,data FROM message WHERE session_id=?',('-outside','outside','s1'))
+            c.execute('INSERT INTO part SELECT id||?,message_id||?, ?,time_created,data FROM part WHERE session_id=?',('-outside','-outside','outside','s1'))
+            c.commit();c.close();source=path
+        ss,excluded=adapter.collect(source,self.tasks,self.args,{},self.tz)
+        data=common.assemble(adapter.PRODUCT,self.tasks,ss,excluded,self.args,self.tz)
+        self.assertEqual(len(data['runs']),2)
+        self.assertEqual([r['segment_count'] for r in data['runs']],[2,1])
+        self.assertGreaterEqual(data['runs'][1]['start_ms']-data['runs'][0]['start_ms'],shift)
+        self.assertTrue(all(r['session']=='s1' for r in data['runs']))
+        self.assertEqual(data['summary']['seconds']['task_mean'],12)
+
     def test_missing_is_not_zero_and_refusal_is_external_evidence(self):
         s=common.segment(adapter.PRODUCT,'Q1','u1','初次提交','u1','s1',self.start,None,str(self.workspace),'synthetic',[],[],[],'search',self.tz)
         self.assertTrue(all(s['values'][k] is None for k in common.METRICS[:-1]))
