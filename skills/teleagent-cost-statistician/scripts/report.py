@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import xml.etree.ElementTree as E
 from zipfile import ZipFile, ZIP_DEFLATED
-from common import METRICS, LABELS, UNITS, load, timezone
+from common import METRICS, LABELS, UNITS, load, timezone, sum_known
 
 S = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -120,6 +120,8 @@ def excel_report(data,path):
     headers=[f'{a} {b}' for a,b in zip(LABELS,UNITS)]
     raw=[list(map(lambda s:value(s,1),['测试ID','题号','独立次数','结果状态','开始时间','结束时间',*headers,'缓存读取Token 万','活动耗时 时分秒','段间等待 时分秒','执行分段数','模型记录','附加条件','会话ID','用户消息ID','来源文件','工作目录','交付路径','页面状态','页面回复','页面依据']))]
     segments=[list(map(lambda s:value(s,1),['测试ID','题号','执行段','段落性质','开始时间','结束时间',*headers,'用户消息ID','说明']))]
+    agents=[[value(s,1) for s in ['测试ID','题号','执行段','层级','执行会话','父执行标识','LLM完成调用数','输入Token 万','输出Token 万','缓存读取Token 万','工具调用','工具错误','搜索调用','结束记录完整','来源文件','工作目录']]]
+    raw[0].extend(value(s,1) for s in ['子Agent会话数','子日志覆盖','覆盖问题'])
     for r in runs:
         observations=r.get('page_observations',[])
         raw.append([r['run_id'],r['task'],r['attempt'],r['status'],value(excel_timestamp(r['start_ms'],tz),9),value(excel_timestamp(r['end_ms'],tz),9),
@@ -127,9 +129,18 @@ def excel_report(data,path):
                     value(shown('seconds',r['active_seconds']),7),value(shown('seconds',r['gap_seconds']),7),r['segment_count'],' / '.join(r['models']),r['conditions'],
                     r['session'],r['user_message'],r['source'],r['directory'],'\n'.join(f['path'] for f in r['files']),
                     '\n'.join(o.get('page_status','') for o in observations),'\n'.join(o.get('page_response','') for o in observations),'\n'.join(o['evidence'] for o in observations)])
+        coverage=r.get('agent_coverage',{})
+        raw[-1].extend([len(coverage.get('child_sessions',[])),('完整' if coverage['complete'] else '不完整') if 'complete' in coverage else '未记录',
+                        '\n'.join(i['reason']+' '+str(i.get('node',i.get('parent',''))) for i in coverage.get('issues',[]))])
         for s in r['segments']:
             segments.append([r['run_id'],r['task'],s['segment'],s['segment_kind'],value(excel_timestamp(s['start_ms'],tz),9),value(excel_timestamp(s['end_ms'],tz),9),
                              *[value(shown(k,s['values'][k]),metric_style(k)) for k in METRICS],s['user_message'],'；'.join(s['warnings'])])
+            for a in s.get('agent_executions',[]):
+                v=a['values']
+                agents.append([r['run_id'],r['task'],s['segment'],a['depth'],a['session'],a.get('parent'),
+                    value(v['llm_calls'],3),value(shown('input_tokens',v['input_tokens']),4),value(shown('output_tokens',v['output_tokens']),4),
+                    value(a['cache_tokens']/10000 if a['cache_tokens'] is not None else None,4),v['tool_calls'],v['tool_errors'],v['search_calls'],
+                    '是' if a['complete'] else '否',a['source'],a.get('directory')])
     summary=[[value(data['product']+' 端侧日志统计',2)],[],['逐次与分段耗时保留毫秒，均值显示至秒；Token以万为单位。'],[],[],[value(s,1) for s in ['题号','题目','独立次数',*headers]]]
     limit=max(201,len(raw)+100); rawcols=[col(i) for i in range(7,16)]
     def rg(c):return f"'逐次记录'!${c}$2:${c}${limit}"
@@ -172,8 +183,9 @@ def excel_report(data,path):
             ['时区',None,data['meta']['timezone']],['两次读取一致',None,str(data['meta']['read_twice_equal'])],
             ['数据快照摘要',None,data['meta']['snapshot_sha256']],['未匹配题目',None,'、'.join(data['missing_tasks']) or '无']]
     sheets=[('任务均值',summary,[33,32,12,23,22,21,21,18,18,18,18,18],6,None),
-            ('逐次记录',raw,[25,11,12,42,29,29,25,22,20,20,18,18,18,18,18,22,25,25,14,25,45,45,45,65,65,65,22,45,45],1,1),
+            ('逐次记录',raw,[25,11,12,42,29,29,25,22,20,20,18,18,18,18,18,22,25,25,14,25,45,45,45,65,65,65,22,45,45,18,18,65],1,1),
             ('执行分段',segments,[25,11,12,18,29,29,25,22,20,20,18,18,18,18,18,45,48],1,1),
+            ('Agent明细',agents,[25,12,12,10,44,60,20,22,22,22,18,18,18,20,80,65],1,1),
             ('口径与来源',method,[27,14,115],0,None)]
     content=el(CT,'Types');child(content,CT,'Default',{'Extension':'rels','ContentType':'application/vnd.openxmlformats-package.relationships+xml'});child(content,CT,'Default',{'Extension':'xml','ContentType':'application/xml'})
     for part,ctype in [('workbook','sheet.main'),('styles','styles')]:
@@ -254,16 +266,30 @@ def word_report(data,path,analysis=None):
     paragraph(data['product']+' 端侧日志观察与采集方法','Title')
     paragraph('采集时间 '+data['meta']['collected_at']+'    时区 '+data['meta']['timezone'])
     paragraph(f"本批找到{len(data['runs'])}次独立测试，{sum(r['segment_count'] for r in data['runs'])}个执行段。每次执行的九项指标、题目均值和对象均值保存在同名Excel。")
-    paragraph('完成记录与交付文件的存在性分别核验。页面状态和实际回复作为补充证据保留；报告记录执行过程及具体问题，交付内容质量由相应评价另行判断。')
     paragraph('测试条件与对象均值','Heading1')
     models=sorted({m for r in data['runs'] for m in r['models']})
-    paragraph('日志中的模型记录：'+('、'.join(models) or '未记录')+'。应用版本没有可靠字段时保留为未记录。')
+    paragraph('模型：'+('、'.join(models) or '未记录'))
+    scope='按执行标识去重；耗时取整体起止时间，交付文件需主任务登记且存在。完整重提为新测试，继续并入原测试。'
+    if any(r.get('agent_coverage',{}).get('child_sessions') for r in data['runs']):scope='计入实际委派的各层子Agent。'+scope
+    paragraph(scope,'Small')
+    paragraph('来源 '+data['meta']['source'],'Small')
+    if data['excluded']:paragraph(f"{len(data['excluded'])}条未关联记录未计入，详情见JSON。",'Small')
     table(['指标','对象均值','有效题目数','有效次数'],[[a+' '+u,text_metric(k,data['summary'][k]['task_mean'],True),data['summary'][k]['task_n'],data['summary'][k]['run_n']] for k,a,u in zip(METRICS,LABELS,UNITS)],[2400,3000,1800,1800])
-    paragraph('对象主要均值先求同题各次有效数值的均值，再按题目等权平均。缺失值不补零，日志完整的失败执行仍参与统计。LLM完成调用数只计已完成且有用量记录的调用，失败重试另记。')
+    paragraph('对象均值按题目等权计算；缺失值不计入均值，已取得完整数值的失败执行参与统计。')
     if data['missing_tasks']:paragraph('本批未匹配到的题目：'+'、'.join(data['missing_tasks']))
     for r in data['runs']:
         paragraph(r['run_id']+' '+r['task_name'],'Heading1')
-        paragraph('结果状态：'+r['status']+'。执行时间：'+r['start']+' 至 '+(r['end'] or '未取得')+'。')
+        paragraph('结果状态：'+r['status']+('。执行时间：' if r.get('agent_coverage',{}).get('complete',True) else '。已知记录时间：')+r['start']+' 至 '+(r['end'] or '未取得')+'。')
+        coverage=r.get('agent_coverage',{})
+        if coverage:
+            if not coverage.get('complete'):paragraph('子Agent日志不完整，相关指标未取得；已记录的调用明细保留在Excel和JSON。')
+            for issue in coverage.get('issues',[]):paragraph('覆盖问题：'+issue['reason']+'；来源 '+str(issue.get('node',issue.get('parent',''))),'Small')
+            contributions=r.get('agent_executions',[])
+            rows=[]
+            for is_child,label in [(False,'主Agent'),(True,'子Agent合计')]:
+                selected=[a['values'] for a in contributions if bool(a['depth'])==is_child]
+                if selected:rows.append([label,*[text_metric(k,sum_known(a[k] for a in selected)) for k in ('llm_calls','tool_calls','tool_errors','search_calls')]])
+            if len(rows)>1:table(['已读取范围','LLM调用','工具调用','工具错误','搜索调用'],rows,[2200,1700,1700,1700,1700])
         paragraph('耗时 '+fmt_duration(r['values']['seconds'],True)+'；LLM完成调用 '+text_metric('llm_calls',r['values']['llm_calls'])+'次；工具调用 '+text_metric('tool_calls',r['values']['tool_calls'])+'次；明确工具错误 '+text_metric('tool_errors',r['values']['tool_errors'])+'次。')
         if r['conditions']:paragraph('实际请求附加条件：'+r['conditions'])
         if r['segment_count']>1:
@@ -271,26 +297,17 @@ def word_report(data,path,analysis=None):
             table(['执行段','性质','耗时','LLM完成调用数'],[[s['segment'],s['segment_kind'],fmt_duration(s['values']['seconds'],True),text_metric('llm_calls',s['values']['llm_calls'])] for s in r['segments']],[800,1900,3800,2500])
         for o in r.get('page_observations',[]):
             paragraph('页面观察：'+o.get('page_status','未记录')+'；实际回复：'+o.get('page_response','未记录')+'。证据来源：'+o['evidence'])
-        for warning in dict.fromkeys(r['warnings']):paragraph('记录问题：'+warning)
+        for warning in dict.fromkeys(r['warnings']):
+            if not warning.startswith('子Agent执行记录不完整，'):paragraph('记录问题：'+warning)
         if r['errors']:
-            table(['时间与工具','明确错误摘要','调用及日志定位'],[[short_time(e['time'])+'\n'+e['name'],error_summary(e),e['id']+'\n'+e['evidence']] for e in r['errors']],[1800,3600,3600])
-        elif r['values']['tool_errors']==0:paragraph('日志中的工具错误状态、内部错误标记及退出码未记录明确工具错误。')
-        else:paragraph('工具错误总数缺失，已有记录及未配对情况见执行数据JSON。')
-        if r['retries'] is None:paragraph('模型失败重试次数未取得完整证据，保留为未记录。')
-        elif r['retries']:
+            table(['时间与工具','明确错误摘要','执行会话、调用及日志定位'],[[short_time(e['time'])+'\n'+e['name'],error_summary(e),(e.get('agent_session','')+'\n' if e.get('agent_session') else '')+e['id']+'\n'+e['evidence'].split('#')[-1]] for e in r['errors']],[1800,3600,3600])
+        if r['retries']:
             table(['时间','模型重试记录','事件定位'],[[short_time(e['time']),e['message'],e['id']] for e in r['retries']],[2000,4200,2800])
         if analysis and r['run_id'] in analysis:
             for note in analysis[r['run_id']]:paragraph(note)
         if r['files']:
             for f in r['files']:paragraph(('文件存在：' if f['exists'] else '登记路径不存在：')+f['path'],'Small')
-        else:paragraph('未找到成功交付工具登记且磁盘存在的文件。')
-        paragraph('来源 '+r['source']+'\n会话 '+r['session']+'\n首次用户消息 '+r['user_message'],'Small')
-    method_paragraphs=[paragraph('采集方法与复核','Heading1'),paragraph(data['meta']['method']),
-        paragraph('工具调用和搜索调用按标识计数；错误需检查明确状态、内部标记及退出码。Token读取逐次调用字段并累加；缓存命中率按缓存读取量除以累计输入量计算。完整重提新增测试次数，继续指令保留为原测试后续段。'),
-        paragraph('本批数据两次只读提取一致。快照摘要 '+data['meta']['snapshot_sha256'],'Small')]
-    if data['excluded']:method_paragraphs.append(paragraph(f"另有{len(data['excluded'])}条未并入目标任务的会话或消息记录，原因保存在执行数据JSON。"))
-    for pp in method_paragraphs:child(pp.find('{'+W+'}pPr'),W,'keepNext')
-    paragraph('后台会话及不匹配题目的消息不计入九项指标。','Small')
+        paragraph('会话 '+r['session']+'\n首次用户消息 '+r['user_message'],'Small')
     sec=child(body,W,'sectPr');child(sec,W,'pgSz',{'{'+W+'}w':'11906','{'+W+'}h':'16838'});child(sec,W,'pgMar',{'{'+W+'}top':'960','{'+W+'}bottom':'960','{'+W+'}left':'1080','{'+W+'}right':'1080','{'+W+'}header':'360','{'+W+'}footer':'360'})
     styles=el(W,'styles')
     for name,size,bold in [('Normal',21,False),('Title',40,True),('Heading1',28,True),('Small',18,False),('TableText',17,False),('TableHeader',17,True)]:

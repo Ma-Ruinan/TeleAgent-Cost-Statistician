@@ -53,6 +53,8 @@ python skills/teleagent-cost-statistician/scripts/collect.py --tasks "题目集�
 
 ## 结果和统计口径
 
+统计包括主任务及其实际委派的各层子Agent，支持多层、并行及子会话复用；没有子调用的任务沿用同一口径。Excel新增Agent明细便于回查，九项指标保持不变。子日志缺失时相关总数保留缺失，并记录已取得的数据。
+
 指标为耗时、LLM完成调用数、输入Token、输出Token、缓存命中率、工具调用、工具错误、搜索调用、交付文件数。耗时显示时分秒，Token以万为单位。LLM完成调用数不包含失败重试请求，模型重试有可靠字段时另列。
 
 完整重提同题算新测试，继续指令算原测试后续段。缺失不补零，有完整数值的失败执行参与均值。主均值按题目等权，按测试次数平均另列。详见 [日志字段](skills/teleagent-cost-statistician/references/log-schema.md) 和 [输出口径](skills/teleagent-cost-statistician/references/output-contract.md)。
@@ -65,4 +67,4 @@ python skills/teleagent-cost-statistician/scripts/collect.py --tasks "题目集�
 python -m unittest discover -s tests -v
 ```
 
-测试在临时目录生成合成日志，覆盖重复测试与继续、缓存计数、用量去重、内部工具错误、缺失与零、题目等权均值、输出单位及文件结构。仓库不包含真实测试题目、原始日志或个人运行结果。
+测试在临时目录生成合成日志，覆盖多层及并行子Agent、子会话复用、重复记录去重、子日志缺失、普通任务、重复测试与继续、缓存计数、工具错误、均值、输出单位及文件结构。仓库不包含真实测试题目、原始日志或个人运行结果。

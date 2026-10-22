@@ -235,6 +235,7 @@ def assemble(product, tasks, segments, excluded, args, tz):
         if args.date and dt.datetime.fromtimestamp(r['start_ms']/1000, tz).date().isoformat() != args.date:
             continue
         r['end_ms'], r['end'] = last['end_ms'], last['end']
+        r['main_end_ms'] = last.get('main_end_ms', last['end_ms'])
         r['values'] = {k: sum_known(s['values'][k] for s in ss) for k in METRICS}
         r['values']['seconds'] = (last['end_ms']-r['start_ms'])/1000 if last['end_ms'] is not None else None
         r['cache_tokens'] = sum_known(s['cache_tokens'] for s in ss)
@@ -245,11 +246,26 @@ def assemble(product, tasks, segments, excluded, args, tz):
             r[key] = [x for s in ss for x in s[key]]
         r['retries'] = [x for s in ss for x in s['retries']] if all(s['retries'] is not None for s in ss) else None
         r['models'] = sorted({x for s in ss for x in s['models']})
+        r['agent_executions'] = [x for s in ss for x in s.get('agent_executions', [])]
+        r['agent_links'] = [x for s in ss for x in s.get('agent_links', [])]
+        r['agent_coverage'] = {'complete': all(s.get('agent_coverage', {}).get('complete', True) for s in ss),
+            'issues': [x for s in ss for x in s.get('agent_coverage', {}).get('issues', [])],
+            'child_sessions': sorted({x for s in ss for x in s.get('agent_coverage', {}).get('child_sessions', [])})}
         r['active_seconds'] = sum_known(s['values']['seconds'] for s in ss)
         r['gap_seconds'] = r['values']['seconds']-r['active_seconds'] if None not in (r['values']['seconds'], r['active_seconds']) else None
         r['final_text'] = last['final_text']; r['segment_count'] = len(ss)
         r['segments'] = ss
         r['status'] = '记录不完整' if last['end_ms'] is None else ('有结束记录且找到交付文件' if r['values']['artifact_count'] else '有结束记录但未找到登记交付')
+        if not r['agent_coverage']['complete']:
+            r['status'] = '子Agent记录不完整；' + r['status']
+            r['values']['seconds'] = None
+        if any(s.get('observed_partial') is not None for s in ss):
+            r['observed_partial'] = {k: sum_known((s.get('observed_partial') or s['values'])[k] for s in ss) for k in METRICS}
+            r['observed_partial']['seconds'] = (last['end_ms']-r['start_ms'])/1000 if last['end_ms'] is not None else None
+            r['observed_partial']['artifact_count'] = sum(f['exists'] for f in r['files'])
+            partial_input = sum_known(u['input'] for u in r['usage_records'])
+            partial_cache = sum_known(u['cache'] for u in r['usage_records'])
+            r['observed_partial']['cache_rate'] = partial_cache/partial_input if partial_input and partial_cache is not None else None
         r['task_name'] = next(t['name'] for t in tasks if t['id'] == r['task'])
         runs.append(r)
     runs.sort(key=lambda r: (next(i for i,t in enumerate(tasks) if t['id']==r['task']), r['start_ms'], r['source'], r['root_user']))
@@ -285,7 +301,7 @@ def assemble(product, tasks, segments, excluded, args, tz):
                       'task_mean': statistics.mean(tm) if tm else None, 'run_mean': statistics.mean(vv) if vv else None}
     valid = [r for r in runs if r['cache_tokens'] is not None and r['values']['input_tokens'] is not None]
     den = sum(r['values']['input_tokens'] for r in valid)
-    return {'schema_version': '1.0', 'product': product, 'tasks': tasks, 'runs': runs,
+    return {'schema_version': '2.0', 'product': product, 'tasks': tasks, 'runs': runs,
             'summary': means, 'pooled_cache_rate': sum(r['cache_tokens'] for r in valid)/den if den else None,
             'excluded': excluded, 'missing_tasks': [t['id'] for t in tasks if not counters[t['id']]]}
 
