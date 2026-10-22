@@ -34,7 +34,7 @@ class StatisticsTests(unittest.TestCase):
         path=self.root/'events.db';c=sqlite3.connect(path)
         c.executescript('CREATE TABLE session(id TEXT,parent_id TEXT,directory TEXT,title TEXT,time_created INTEGER);CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,data TEXT);CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,data TEXT);CREATE TABLE event(id TEXT,aggregate_id TEXT,type TEXT,data TEXT,seq INTEGER);')
         c.execute('INSERT INTO session VALUES(?,?,?,?,?)',('s1',None,str(self.workspace),'Synthetic',self.start))
-        for i,(offset,prompt) in enumerate([(0,self.tasks[0]['prompt']),(10000,'����'),(30000,self.tasks[0]['prompt'])],1):
+        for i,(offset,prompt) in enumerate([(0,self.tasks[0]['prompt']),(10000,'继续'),(30000,self.tasks[0]['prompt'])],1):
             at=self.start+offset;uid=f'u{i}';aid=f'a{i}'
             def message(mid,when,data):c.execute('INSERT INTO message VALUES(?,?,?,?)',(mid,'s1',when,json.dumps(data)))
             def part(pid,mid,when,data):c.execute('INSERT INTO part VALUES(?,?,?,?,?)',(pid,mid,'s1',when,json.dumps(data)))
@@ -48,7 +48,7 @@ class StatisticsTests(unittest.TestCase):
 
     def wb_fixture(self):
         path=self.root/'events.jsonl';rows=[]
-        for i,(offset,prompt) in enumerate([(0,self.tasks[0]['prompt']+'\n@scene#7:����PPT'),(10000,'����'),(30000,self.tasks[0]['prompt'])],1):
+        for i,(offset,prompt) in enumerate([(0,self.tasks[0]['prompt']+'\n@scene#7:制作PPT'),(10000,'继续'),(30000,self.tasks[0]['prompt'])],1):
             at=self.start+offset;uid=f'u{i}';cid=f'c{i}'
             rows.append({'id':uid,'type':'message','role':'user','sessionId':'s1','cwd':str(self.workspace),'timestamp':at,'content':[{'text':'<user_query>'+prompt+'</user_query>'}]})
             usage={'requests':1,'inputTokens':400,'outputTokens':10,'totalTokens':410,'inputTokensDetails':[{'cached_tokens':300}]}
@@ -82,26 +82,26 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(data['summary']['seconds']['task_mean'],12)
         data['meta']={'timezone':'UTC','collected_at':'2026-01-01T00:00:00+00:00','source':str(path),'method':adapter.METHOD,'read_twice_equal':True,'snapshot_sha256':'synthetic'}
         out=self.root/'report';report.export_reports(data,out)
-        with ZipFile(out/(adapter.PRODUCT+'_����ָ��ͳ��.xlsx')) as z:
+        with ZipFile(out/(adapter.PRODUCT+'_过程指标统计.xlsx')) as z:
             self.assertIsNone(z.testzip())
             ns={'s':report.S};sheet=E.fromstring(z.read('xl/worksheets/sheet2.xml'))
             cells={c.attrib['r']:c for c in sheet.findall('.//s:c',ns)}
             self.assertAlmostEqual(float(cells['G2'].find('s:v',ns).text),17/86400)
             self.assertAlmostEqual(float(cells['I2'].find('s:v',ns).text),.08)
-            self.assertIn('ʱ',z.read('xl/styles.xml').decode())
+            self.assertIn('时',z.read('xl/styles.xml').decode())
             for name in z.namelist():
                 if name.endswith('.xml') or name.endswith('.rels'):E.fromstring(z.read(name))
-        with ZipFile(out/(adapter.PRODUCT+'_����������ɼ�����.docx')) as z:
+        with ZipFile(out/(adapter.PRODUCT+'_过程问题与采集方法.docx')) as z:
             self.assertIsNone(z.testzip());E.fromstring(z.read('word/document.xml'))
-            self.assertIn('LLM��ɵ�����',z.read('word/document.xml').decode())
+            self.assertIn('LLM完成调用数',z.read('word/document.xml').decode())
 
     def test_missing_is_not_zero_and_refusal_is_external_evidence(self):
-        s=common.segment(adapter.PRODUCT,'Q1','u1','�����ύ','u1','s1',self.start,None,str(self.workspace),'synthetic',[],[],[],'search',self.tz)
+        s=common.segment(adapter.PRODUCT,'Q1','u1','初次提交','u1','s1',self.start,None,str(self.workspace),'synthetic',[],[],[],'search',self.tz)
         self.assertTrue(all(s['values'][k] is None for k in common.METRICS[:-1]))
         self.assertEqual(s['values']['artifact_count'],0)
-        obs=self.root/'observations.json';common.dump(obs,[{'session':'s1','page_status':'�����','page_response':'��ʱ�޷��ش�','outcome':'refused','evidence':'synthetic user observation'}]);self.args.observations=str(obs)
+        obs=self.root/'observations.json';common.dump(obs,[{'session':'s1','page_status':'已完成','page_response':'暂时无法回答','outcome':'refused','evidence':'synthetic user observation'}]);self.args.observations=str(obs)
         data=common.assemble(adapter.PRODUCT,self.tasks,[s],[],self.args,self.tz)
-        self.assertIn('�ܴ�',data['runs'][0]['status']);self.assertIsNone(data['summary']['llm_calls']['task_mean'])
+        self.assertIn('拒答',data['runs'][0]['status']);self.assertIsNone(data['summary']['llm_calls']['task_mean'])
         self.assertEqual(data['summary']['artifact_count']['task_mean'],0)
 
     def test_token_schema_change_stops_instead_of_guessing(self):

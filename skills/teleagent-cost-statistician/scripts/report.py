@@ -37,13 +37,13 @@ def shown(key,v):
 def metric_style(key, mean=False):
     return 8 if key=='seconds' and mean else 7 if key=='seconds' else 6 if key=='cache_rate' else (5 if mean else 4) if key in ('input_tokens','output_tokens') else 10 if mean else 3
 def fmt_duration(seconds, milliseconds=False):
-    if seconds is None:return 'δȡ��'
+    if seconds is None:return '未取得'
     import math
     n=math.floor(seconds*(1000 if milliseconds else 1)+0.5);ss,ms=divmod(n,1000) if milliseconds else (n,0)
     h,rem=divmod(ss,3600);m,s=divmod(rem,60)
-    return f'{h}ʱ{m:02d}��{s:02d}'+(f'.{ms:03d}' if milliseconds else '')+'��'
+    return f'{h}时{m:02d}分{s:02d}'+(f'.{ms:03d}' if milliseconds else '')+'秒'
 def text_metric(key,v,mean=False):
-    if v is None:return 'δȡ��'
+    if v is None:return '未取得'
     if key=='seconds':return fmt_duration(v, not mean)
     if key=='cache_rate':return f'{v:.2%}'
     if key in ('input_tokens','output_tokens'):return f'{v/10000:,.6f}' if mean else f'{v/10000:,.4f}'
@@ -63,7 +63,7 @@ def relationships(entries):
 
 def excel_styles():
     root=el(S,'styleSheet')
-    fmts=['#,##0','#,##0.0000','#,##0.000000','0.00%','[h]"ʱ"mm"��"ss.000"��"','[h]"ʱ"mm"��"ss"��"','yyyy-mm-dd hh:mm:ss.000','0.00']
+    fmts=['#,##0','#,##0.0000','#,##0.000000','0.00%','[h]"时"mm"分"ss.000"秒"','[h]"时"mm"分"ss"秒"','yyyy-mm-dd hh:mm:ss.000','0.00']
     nf=child(root,S,'numFmts',{'count':str(len(fmts))})
     for i,f in enumerate(fmts,164):child(nf,S,'numFmt',{'numFmtId':str(i),'formatCode':f})
     fonts=child(root,S,'fonts',{'count':'3'})
@@ -103,7 +103,7 @@ def worksheet(rows,widths,freeze=0,filter_row=None,merges=None):
             c=child(rr,S,'c',{'r':col(ci)+str(ri),'s':str(d['s'])});v=d['v']
             if d['f']:
                 if not isinstance(v,(float,int)):c.set('t','str')
-                child(c,S,'f',text=d['f']);child(c,S,'v',text=v if v is not None else 'δȡ��')
+                child(c,S,'f',text=d['f']);child(c,S,'v',text=v if v is not None else '未取得')
             elif isinstance(v,(float,int)) and not isinstance(v,bool):child(c,S,'v',text=repr(v))
             else:
                 c.set('t','inlineStr');t=child(child(c,S,'is'),S,'t',text=v);t.set('{http://www.w3.org/XML/1998/namespace}space','preserve')
@@ -118,8 +118,8 @@ def worksheet(rows,widths,freeze=0,filter_row=None,merges=None):
 def excel_report(data,path):
     runs=data['runs'];tasks=data['tasks'];tz=timezone(data['meta']['timezone'])
     headers=[f'{a} {b}' for a,b in zip(LABELS,UNITS)]
-    raw=[list(map(lambda s:value(s,1),['����ID','���','��������','���״̬','��ʼʱ��','����ʱ��',*headers,'�����ȡToken ��','���ʱ ʱ����','�μ�ȴ� ʱ����','ִ�зֶ���','ģ�ͼ�¼','��������','�ỰID','�û���ϢID','��Դ�ļ�','����Ŀ¼','����·��','ҳ��״̬','ҳ��ظ�','ҳ������']))]
-    segments=[list(map(lambda s:value(s,1),['����ID','���','ִ�ж�','��������','��ʼʱ��','����ʱ��',*headers,'�û���ϢID','˵��']))]
+    raw=[list(map(lambda s:value(s,1),['测试ID','题号','独立次数','结果状态','开始时间','结束时间',*headers,'缓存读取Token 万','活动耗时 时分秒','段间等待 时分秒','执行分段数','模型记录','附加条件','会话ID','用户消息ID','来源文件','工作目录','交付路径','页面状态','页面回复','页面依据']))]
+    segments=[list(map(lambda s:value(s,1),['测试ID','题号','执行段','段落性质','开始时间','结束时间',*headers,'用户消息ID','说明']))]
     for r in runs:
         observations=r.get('page_observations',[])
         raw.append([r['run_id'],r['task'],r['attempt'],r['status'],value(excel_timestamp(r['start_ms'],tz),9),value(excel_timestamp(r['end_ms'],tz),9),
@@ -129,52 +129,52 @@ def excel_report(data,path):
                     '\n'.join(o.get('page_status','') for o in observations),'\n'.join(o.get('page_response','') for o in observations),'\n'.join(o['evidence'] for o in observations)])
         for s in r['segments']:
             segments.append([r['run_id'],r['task'],s['segment'],s['segment_kind'],value(excel_timestamp(s['start_ms'],tz),9),value(excel_timestamp(s['end_ms'],tz),9),
-                             *[value(shown(k,s['values'][k]),metric_style(k)) for k in METRICS],s['user_message'],'��'.join(s['warnings'])])
-    summary=[[value(data['product']+' �˲���־ͳ��',2)],[],['�����ֶκ�ʱ�������룬��ֵ��ʾ���룻Token����Ϊ��λ��'],[],[],[value(s,1) for s in ['���','��Ŀ','��������',*headers]]]
+                             *[value(shown(k,s['values'][k]),metric_style(k)) for k in METRICS],s['user_message'],'；'.join(s['warnings'])])
+    summary=[[value(data['product']+' 端侧日志统计',2)],[],['逐次与分段耗时保留毫秒，均值显示至秒；Token以万为单位。'],[],[],[value(s,1) for s in ['题号','题目','独立次数',*headers]]]
     limit=max(201,len(raw)+100); rawcols=[col(i) for i in range(7,16)]
-    def rg(c):return f"'��μ�¼'!${c}$2:${c}${limit}"
+    def rg(c):return f"'逐次记录'!${c}$2:${c}${limit}"
     for row,t in enumerate(tasks,7):
         cells=[t['id'],t['name'],value(sum(r['task']==t['id'] for r in runs),3,f'COUNTIF({rg("B")},A{row})')]
         for i,k in enumerate(METRICS):
             rr=rg(rawcols[i]);n=f'COUNTIFS({rg("B")},A{row},{rr},"<>")'
-            formula=f'IF({n}=0,"δȡ��",SUMIFS({rr},{rg("B")},A{row})/{n})'
+            formula=f'IF({n}=0,"未取得",SUMIFS({rr},{rg("B")},A{row})/{n})'
             cells.append(value(shown(k,data['summary'][k]['by_task'][t['id']]['mean']),metric_style(k,True),formula))
         summary.append(cells)
     summary.append([]);lasttask=6+len(tasks)
-    for which,label in [('task_mean','�����ֵ ��Ŀ��Ȩ'),('run_mean','ȫ�����Ծ�ֵ ����'),('task_n','��Ч��Ŀ��'),('run_n','��Ч���Դ���')]:
+    for which,label in [('task_mean','对象均值 题目等权'),('run_mean','全部测试均值 按次'),('task_n','有效题目数'),('run_n','有效测试次数')]:
         cells=[label,None,len({r['task'] for r in runs}) if which=='task_mean' else len(runs) if which=='run_mean' else None]
         for i,k in enumerate(METRICS):
             dest=col(4+i);rr=rg(rawcols[i]);taskrange=f'{dest}7:{dest}{lasttask}'
             target=taskrange if which in ('task_mean','task_n') else rr
-            formula=f'COUNT({target})' if which.endswith('_n') else f'IF(COUNT({target})=0,"δȡ��",AVERAGE({target}))'
+            formula=f'COUNT({target})' if which.endswith('_n') else f'IF(COUNT({target})=0,"未取得",AVERAGE({target}))'
             cells.append(value(data['summary'][k][which] if which.endswith('_n') else shown(k,data['summary'][k][which]),3 if which.endswith('_n') else metric_style(k,True),formula))
         summary.append(cells)
     summary.append([])
     paired_den=f'SUMIFS({rg("I")},{rg("P")},"<>")';paired_num=f'SUMIFS({rg("P")},{rg("I")},"<>")'
-    summary.append(['���建�������� ��������Ȩ',None,None,None,None,None,None,value(data['pooled_cache_rate'],6,f'IF({paired_den}=0,"δȡ��",{paired_num}/{paired_den})')])
-    for note in ['��Ҫ�����ֵ����ͬ����ξ�ֵ���ٰ���Ŀ��Ȩ�����ξ�ֵ���С�',
-                 'ȱʧֵ�����㣻��������ֵ��ʧ��ִ�в���ͳ�ơ�ÿ���г���Ч��Ŀ���ʹ�����',
-                 '���������ύ����һ�Σ�����ָ��Ϊԭ���Ժ����Σ��ڲ�ģ�����Բ����Ӷ������Դ�����',
-                 'LLM��ɵ������������������������¼�ĵ��ã�ʧ���������ǡ�',
-                 f'��ʽԤ����μ�¼����{limit}�У�����ʱ�������вɼ������ɱ��档']:
+    summary.append(['整体缓存命中率 输入量加权',None,None,None,None,None,None,value(data['pooled_cache_rate'],6,f'IF({paired_den}=0,"未取得",{paired_num}/{paired_den})')])
+    for note in ['主要对象均值先求同题各次均值，再按题目等权；按次均值另列。',
+                 '缺失值不补零；有完整数值的失败执行参与统计。每项列出有效题目数和次数。',
+                 '完整重新提交算新一次；继续指令为原测试后续段；内部模型重试不增加独立测试次数。',
+                 'LLM完成调用数仅计已完成且有用量记录的调用；失败重试另记。',
+                 f'公式预留逐次记录至第{limit}行；超过时重新运行采集并生成报告。']:
         summary.append([note])
-    definitions=[['��ʱ','ʱ����','�û��ύ��������ģ�ͻظ����������Ժ��μ�ȴ����ֶα�����ʱ���С�'],
-                 ['LLM��ɵ�����','��','���������������¼��LLM���ã�����Ϣ�������ʶȥ�أ�ʧ�����Ե��С�'],
-                 ['����Token','��','�����ε����ۼӣ��������ȡ��д�룻ͬһ�������ڶ������ٴ������Ի������'],
-                 ['���Token','��','��ȡ����ֶκ��ۼӣ�1�����10000 Token��'],
-                 ['����������','%','�����ȡToken/�ۼ�����Token�����������������ֵΪ������������Ȩֵ���С�'],
-                 ['���ߵ���','��','�����ߵ��ñ�ʶȥ�ؼ���������ʧ�ܵ��á�'],
-                 ['���ߴ���','��','��ȷ����״̬���ڲ������ǻ���������˳��룬�����ñ�ʶȥ�ء�'],
-                 ['��������','��','��ͳ�Ʊ�����ר���������ߵ��ã������������ã���ҳץȡ���������������й۲졣'],
-                 ['�����ļ���','��','�ɹ��������ߵǼ��Ҵ��̴��ڵ�Ψһ·������δ�Ǽ��ļ����Զ����롣']]
-    method=[[value('ָ��ھ�����Դ',2)],[],[value(x,1) for x in ['ָ��','��λ','�ھ�']],*definitions,[],
-            ['���󷽷�',None,data['meta']['method']],['������Դ',None,data['meta']['source']],['�ɼ�ʱ��',None,data['meta']['collected_at']],
-            ['ʱ��',None,data['meta']['timezone']],['���ζ�ȡһ��',None,str(data['meta']['read_twice_equal'])],
-            ['���ݿ���ժҪ',None,data['meta']['snapshot_sha256']],['δƥ����Ŀ',None,'��'.join(data['missing_tasks']) or '��']]
-    sheets=[('�����ֵ',summary,[33,32,12,23,22,21,21,18,18,18,18,18],6,None),
-            ('��μ�¼',raw,[25,11,12,42,29,29,25,22,20,20,18,18,18,18,18,22,25,25,14,25,45,45,45,65,65,65,22,45,45],1,1),
-            ('ִ�зֶ�',segments,[25,11,12,18,29,29,25,22,20,20,18,18,18,18,18,45,48],1,1),
-            ('�ھ�����Դ',method,[27,14,115],0,None)]
+    definitions=[['耗时','时分秒','用户提交至最后完成模型回复；完整测试含段间等待，分段表与活动耗时另列。'],
+                 ['LLM完成调用数','次','已完成且有用量记录的LLM调用，按消息或请求标识去重；失败重试单列。'],
+                 ['输入Token','万','按各次调用累加，含缓存读取及写入；同一上下文在多轮中再次输入仍会计量。'],
+                 ['输出Token','万','读取输出字段后累加，1万等于10000 Token。'],
+                 ['缓存命中率','%','缓存读取Token/累计输入Token；各题比例的算术均值为主，输入量加权值另列。'],
+                 ['工具调用','次','按工具调用标识去重计数，包括失败调用。'],
+                 ['工具错误','次','明确错误状态、内部错误标记或非零命令退出码，按调用标识去重。'],
+                 ['搜索调用','次','仅统计本对象专用搜索工具调用，包括报错调用；网页抓取和命令间接联网单列观察。'],
+                 ['交付文件数','个','成功交付工具登记且磁盘存在的唯一路径数；未登记文件不自动纳入。']]
+    method=[[value('指标口径与来源',2)],[],[value(x,1) for x in ['指标','单位','口径']],*definitions,[],
+            ['对象方法',None,data['meta']['method']],['数据来源',None,data['meta']['source']],['采集时间',None,data['meta']['collected_at']],
+            ['时区',None,data['meta']['timezone']],['两次读取一致',None,str(data['meta']['read_twice_equal'])],
+            ['数据快照摘要',None,data['meta']['snapshot_sha256']],['未匹配题目',None,'、'.join(data['missing_tasks']) or '无']]
+    sheets=[('任务均值',summary,[33,32,12,23,22,21,21,18,18,18,18,18],6,None),
+            ('逐次记录',raw,[25,11,12,42,29,29,25,22,20,20,18,18,18,18,18,22,25,25,14,25,45,45,45,65,65,65,22,45,45],1,1),
+            ('执行分段',segments,[25,11,12,18,29,29,25,22,20,20,18,18,18,18,18,45,48],1,1),
+            ('口径与来源',method,[27,14,115],0,None)]
     content=el(CT,'Types');child(content,CT,'Default',{'Extension':'rels','ContentType':'application/vnd.openxmlformats-package.relationships+xml'});child(content,CT,'Default',{'Extension':'xml','ContentType':'application/xml'})
     for part,ctype in [('workbook','sheet.main'),('styles','styles')]:
         child(content,CT,'Override',{'PartName':'/xl/'+part+'.xml','ContentType':'application/vnd.openxmlformats-officedocument.spreadsheetml.'+ctype+'+xml'})
@@ -185,7 +185,7 @@ def excel_report(data,path):
             child(sh,S,'sheet',{'name':name,'sheetId':str(i),'{'+R+'}id':f'rId{i}'})
             child(content,CT,'Override',{'PartName':f'/xl/worksheets/sheet{i}.xml','ContentType':'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'})
             rels.append((f'rId{i}','worksheet',f'worksheets/sheet{i}.xml'))
-            merges=([f'A{j}:L{j}' for j,row in enumerate(rows,1) if row and len(row)==1] if name=='�����ֵ' else ['A1:C1'] if name=='�ھ�����Դ' else [])
+            merges=([f'A{j}:L{j}' for j,row in enumerate(rows,1) if row and len(row)==1] if name=='任务均值' else ['A1:C1'] if name=='口径与来源' else [])
             z.writestr(f'xl/worksheets/sheet{i}.xml',worksheet(rows,widths,freeze,autofilter,merges))
         child(workbook,S,'calcPr',{'calcId':'191029','fullCalcOnLoad':'1'})
         rels.append(('rStyles','styles','styles.xml'))
@@ -194,33 +194,33 @@ def excel_report(data,path):
 
 
 def clean(text):
-    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]','',str(text)).replace('��','').replace('��','').replace('"','').replace('��','��')
+    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]','',str(text)).replace('“','').replace('”','').replace('"','').replace('—','，')
 
 
 def error_summary(error):
     text=error['message'];code=error.get('exit_code')
-    patterns=[('SEARCH_TIME_RANGE_TOO_LONG','����ʱ�䷶Χ������������'),
-              ('SEARCH_TIME_RANGE_UNSUPPORTED','�������߲�֧�����������ʷʱ������'),
-              ('Unsupported browser URL protocol','�������֧�������е�URLЭ��'),
-              ('A positional parameter cannot be found','�������λ�ô���'),
-              ('file: command not found','file�������'),
-              ('SyntaxError','�ű��﷨����'),
-              ('Cannot display content of binary file','��ȡ���߲�֧��ֱ����ʾ�������ļ�'),
-              ('File does not exist','Ŀ���ļ�������'),
-              ('AssertionError','���ű�����ʧ��'),
-              ('failed to read file','ͼ�񹤾߶�ȡ�ļ�ʧ��'),
-              ('cannot find the path','������ļ�·��������')]
+    patterns=[('SEARCH_TIME_RANGE_TOO_LONG','搜索时间范围超过七天限制'),
+              ('SEARCH_TIME_RANGE_UNSUPPORTED','搜索工具不支持所请求的历史时间区间'),
+              ('Unsupported browser URL protocol','浏览器不支持请求中的URL协议'),
+              ('A positional parameter cannot be found','命令参数位置错误'),
+              ('file: command not found','file命令不存在'),
+              ('SyntaxError','脚本语法错误'),
+              ('Cannot display content of binary file','读取工具不支持直接显示二进制文件'),
+              ('File does not exist','目标文件不存在'),
+              ('AssertionError','检查脚本断言失败'),
+              ('failed to read file','图像工具读取文件失败'),
+              ('cannot find the path','请求的文件路径不存在')]
     http=re.search(r'status code:\s*(\d+)',text)
-    if http:return '��ҳץȡ����HTTP '+http.group(1)
-    if 'punycode' in text and code not in (None,0):return f'�����˳���{code}�������Node������ʾ���������һ���˲�'
+    if http:return '网页抓取返回HTTP '+http.group(1)
+    if 'punycode' in text and code not in (None,0):return f'命令退出码{code}；输出含Node弃用提示，根因需进一步核查'
     for pattern,summary in patterns:
-        if pattern in text:return summary+(f'���˳���{code}' if code not in (None,0) else '')
-    if 'timed out' in text or 'deadline exceeded' in text:return '��ҳץȡ��ʱ'
-    return text[:160]+('��' if len(text)>160 else '')
+        if pattern in text:return summary+(f'；退出码{code}' if code not in (None,0) else '')
+    if 'timed out' in text or 'deadline exceeded' in text:return '网页抓取超时'
+    return text[:160]+('…' if len(text)>160 else '')
 
 
 def short_time(text):
-    return text[:10]+'\n'+text[11:23] if text else 'ʱ��δ��¼'
+    return text[:10]+'\n'+text[11:23] if text else '时间未记录'
 
 
 def word_report(data,path,analysis=None):
@@ -251,46 +251,46 @@ def word_report(data,path,analysis=None):
                 child(p,W,'shd',{'{'+W+'}fill':'E8EDF2' if ri==0 else 'F6F8FA' if ri%2==0 else 'FFFFFF'})
                 paragraph(text,'TableHeader' if ri==0 else 'TableText',cell)
         paragraph('')
-    paragraph(data['product']+' �˲���־�۲���ɼ�����','Title')
-    paragraph('�ɼ�ʱ�� '+data['meta']['collected_at']+'    ʱ�� '+data['meta']['timezone'])
-    paragraph(f"�����ҵ�{len(data['runs'])}�ζ������ԣ�{sum(r['segment_count'] for r in data['runs'])}��ִ�жΡ�ÿ��ִ�еľ���ָ�ꡢ��Ŀ��ֵ�Ͷ����ֵ������ͬ��Excel��")
-    paragraph('��ɼ�¼�뽻���ļ��Ĵ����Էֱ���顣ҳ��״̬��ʵ�ʻظ���Ϊ����֤�ݱ����������¼ִ�й��̼��������⣬����������������Ӧ���������жϡ�')
-    paragraph('��������������ֵ','Heading1')
+    paragraph(data['product']+' 端侧日志观察与采集方法','Title')
+    paragraph('采集时间 '+data['meta']['collected_at']+'    时区 '+data['meta']['timezone'])
+    paragraph(f"本批找到{len(data['runs'])}次独立测试，{sum(r['segment_count'] for r in data['runs'])}个执行段。每次执行的九项指标、题目均值和对象均值保存在同名Excel。")
+    paragraph('完成记录与交付文件的存在性分别核验。页面状态和实际回复作为补充证据保留；报告记录执行过程及具体问题，交付内容质量由相应评价另行判断。')
+    paragraph('测试条件与对象均值','Heading1')
     models=sorted({m for r in data['runs'] for m in r['models']})
-    paragraph('��־�е�ģ�ͼ�¼��'+('��'.join(models) or 'δ��¼')+'��Ӧ�ð汾û�пɿ��ֶ�ʱ����Ϊδ��¼��')
-    table(['ָ��','�����ֵ','��Ч��Ŀ��','��Ч����'],[[a+' '+u,text_metric(k,data['summary'][k]['task_mean'],True),data['summary'][k]['task_n'],data['summary'][k]['run_n']] for k,a,u in zip(METRICS,LABELS,UNITS)],[2400,3000,1800,1800])
-    paragraph('������Ҫ��ֵ����ͬ�������Ч��ֵ�ľ�ֵ���ٰ���Ŀ��Ȩƽ����ȱʧֵ�����㣬��־������ʧ��ִ���Բ���ͳ�ơ�LLM��ɵ�����ֻ�����������������¼�ĵ��ã�ʧ���������ǡ�')
-    if data['missing_tasks']:paragraph('����δƥ�䵽����Ŀ��'+'��'.join(data['missing_tasks']))
+    paragraph('日志中的模型记录：'+('、'.join(models) or '未记录')+'。应用版本没有可靠字段时保留为未记录。')
+    table(['指标','对象均值','有效题目数','有效次数'],[[a+' '+u,text_metric(k,data['summary'][k]['task_mean'],True),data['summary'][k]['task_n'],data['summary'][k]['run_n']] for k,a,u in zip(METRICS,LABELS,UNITS)],[2400,3000,1800,1800])
+    paragraph('对象主要均值先求同题各次有效数值的均值，再按题目等权平均。缺失值不补零，日志完整的失败执行仍参与统计。LLM完成调用数只计已完成且有用量记录的调用，失败重试另记。')
+    if data['missing_tasks']:paragraph('本批未匹配到的题目：'+'、'.join(data['missing_tasks']))
     for r in data['runs']:
         paragraph(r['run_id']+' '+r['task_name'],'Heading1')
-        paragraph('���״̬��'+r['status']+'��ִ��ʱ�䣺'+r['start']+' �� '+(r['end'] or 'δȡ��')+'��')
-        paragraph('��ʱ '+fmt_duration(r['values']['seconds'],True)+'��LLM��ɵ��� '+text_metric('llm_calls',r['values']['llm_calls'])+'�Σ����ߵ��� '+text_metric('tool_calls',r['values']['tool_calls'])+'�Σ���ȷ���ߴ��� '+text_metric('tool_errors',r['values']['tool_errors'])+'�Ρ�')
-        if r['conditions']:paragraph('ʵ�����󸽼�������'+r['conditions'])
+        paragraph('结果状态：'+r['status']+'。执行时间：'+r['start']+' 至 '+(r['end'] or '未取得')+'。')
+        paragraph('耗时 '+fmt_duration(r['values']['seconds'],True)+'；LLM完成调用 '+text_metric('llm_calls',r['values']['llm_calls'])+'次；工具调用 '+text_metric('tool_calls',r['values']['tool_calls'])+'次；明确工具错误 '+text_metric('tool_errors',r['values']['tool_errors'])+'次。')
+        if r['conditions']:paragraph('实际请求附加条件：'+r['conditions'])
         if r['segment_count']>1:
-            paragraph('���ΰ���׷�Ӽ�������������ԭֵ�����ʱ '+fmt_duration(r['active_seconds'],True)+'���μ�ȴ� '+fmt_duration(r['gap_seconds'],True)+'��')
-            table(['ִ�ж�','����','��ʱ','LLM��ɵ�����'],[[s['segment'],s['segment_kind'],fmt_duration(s['values']['seconds'],True),text_metric('llm_calls',s['values']['llm_calls'])] for s in r['segments']],[800,1900,3800,2500])
+            paragraph('本次包含追加继续，保留各段原值。活动耗时 '+fmt_duration(r['active_seconds'],True)+'，段间等待 '+fmt_duration(r['gap_seconds'],True)+'。')
+            table(['执行段','性质','耗时','LLM完成调用数'],[[s['segment'],s['segment_kind'],fmt_duration(s['values']['seconds'],True),text_metric('llm_calls',s['values']['llm_calls'])] for s in r['segments']],[800,1900,3800,2500])
         for o in r.get('page_observations',[]):
-            paragraph('ҳ��۲죺'+o.get('page_status','δ��¼')+'��ʵ�ʻظ���'+o.get('page_response','δ��¼')+'��֤����Դ��'+o['evidence'])
-        for warning in dict.fromkeys(r['warnings']):paragraph('��¼���⣺'+warning)
+            paragraph('页面观察：'+o.get('page_status','未记录')+'；实际回复：'+o.get('page_response','未记录')+'。证据来源：'+o['evidence'])
+        for warning in dict.fromkeys(r['warnings']):paragraph('记录问题：'+warning)
         if r['errors']:
-            table(['ʱ���빤��','��ȷ����ժҪ','���ü���־��λ'],[[short_time(e['time'])+'\n'+e['name'],error_summary(e),e['id']+'\n'+e['evidence']] for e in r['errors']],[1800,3600,3600])
-        elif r['values']['tool_errors']==0:paragraph('��־�еĹ��ߴ���״̬���ڲ������Ǽ��˳���δ��¼��ȷ���ߴ���')
-        else:paragraph('���ߴ�������ȱʧ�����м�¼��δ��������ִ������JSON��')
-        if r['retries'] is None:paragraph('ģ��ʧ�����Դ���δȡ������֤�ݣ�����Ϊδ��¼��')
+            table(['时间与工具','明确错误摘要','调用及日志定位'],[[short_time(e['time'])+'\n'+e['name'],error_summary(e),e['id']+'\n'+e['evidence']] for e in r['errors']],[1800,3600,3600])
+        elif r['values']['tool_errors']==0:paragraph('日志中的工具错误状态、内部错误标记及退出码未记录明确工具错误。')
+        else:paragraph('工具错误总数缺失，已有记录及未配对情况见执行数据JSON。')
+        if r['retries'] is None:paragraph('模型失败重试次数未取得完整证据，保留为未记录。')
         elif r['retries']:
-            table(['ʱ��','ģ�����Լ�¼','�¼���λ'],[[short_time(e['time']),e['message'],e['id']] for e in r['retries']],[2000,4200,2800])
+            table(['时间','模型重试记录','事件定位'],[[short_time(e['time']),e['message'],e['id']] for e in r['retries']],[2000,4200,2800])
         if analysis and r['run_id'] in analysis:
             for note in analysis[r['run_id']]:paragraph(note)
         if r['files']:
-            for f in r['files']:paragraph(('�ļ����ڣ�' if f['exists'] else '�Ǽ�·�������ڣ�')+f['path'],'Small')
-        else:paragraph('δ�ҵ��ɹ��������ߵǼ��Ҵ��̴��ڵ��ļ���')
-        paragraph('��Դ '+r['source']+'\n�Ự '+r['session']+'\n�״��û���Ϣ '+r['user_message'],'Small')
-    method_paragraphs=[paragraph('�ɼ������븴��','Heading1'),paragraph(data['meta']['method']),
-        paragraph('���ߵ��ú��������ð���ʶ����������������ȷ״̬���ڲ���Ǽ��˳��롣Token��ȡ��ε����ֶβ��ۼӣ����������ʰ������ȡ�������ۼ����������㡣���������������Դ���������ָ���Ϊԭ���Ժ����Ρ�'),
-        paragraph('������������ֻ����ȡһ�¡�����ժҪ '+data['meta']['snapshot_sha256'],'Small')]
-    if data['excluded']:method_paragraphs.append(paragraph(f"����{len(data['excluded'])}��δ����Ŀ������ĻỰ����Ϣ��¼��ԭ�򱣴���ִ������JSON��"))
+            for f in r['files']:paragraph(('文件存在：' if f['exists'] else '登记路径不存在：')+f['path'],'Small')
+        else:paragraph('未找到成功交付工具登记且磁盘存在的文件。')
+        paragraph('来源 '+r['source']+'\n会话 '+r['session']+'\n首次用户消息 '+r['user_message'],'Small')
+    method_paragraphs=[paragraph('采集方法与复核','Heading1'),paragraph(data['meta']['method']),
+        paragraph('工具调用和搜索调用按标识计数；错误需检查明确状态、内部标记及退出码。Token读取逐次调用字段并累加；缓存命中率按缓存读取量除以累计输入量计算。完整重提新增测试次数，继续指令保留为原测试后续段。'),
+        paragraph('本批数据两次只读提取一致。快照摘要 '+data['meta']['snapshot_sha256'],'Small')]
+    if data['excluded']:method_paragraphs.append(paragraph(f"另有{len(data['excluded'])}条未并入目标任务的会话或消息记录，原因保存在执行数据JSON。"))
     for pp in method_paragraphs:child(pp.find('{'+W+'}pPr'),W,'keepNext')
-    paragraph('��̨�Ự����ƥ����Ŀ����Ϣ���������ָ�ꡣ','Small')
+    paragraph('后台会话及不匹配题目的消息不计入九项指标。','Small')
     sec=child(body,W,'sectPr');child(sec,W,'pgSz',{'{'+W+'}w':'11906','{'+W+'}h':'16838'});child(sec,W,'pgMar',{'{'+W+'}top':'960','{'+W+'}bottom':'960','{'+W+'}left':'1080','{'+W+'}right':'1080','{'+W+'}header':'360','{'+W+'}footer':'360'})
     styles=el(W,'styles')
     for name,size,bold in [('Normal',21,False),('Title',40,True),('Heading1',28,True),('Small',18,False),('TableText',17,False),('TableHeader',17,True)]:
@@ -312,11 +312,11 @@ def word_report(data,path,analysis=None):
 
 def export_reports(data,output,analysis=None):
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
-    excel_report(data,output/(data['product']+'_����ָ��ͳ��.xlsx'))
-    word_report(data,output/(data['product']+'_����������ɼ�����.docx'),analysis)
+    excel_report(data,output/(data['product']+'_过程指标统计.xlsx'))
+    word_report(data,output/(data['product']+'_过程问题与采集方法.docx'),analysis)
 
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description='���Ѳɼ�JSON����ͬ�ھ�Excel��Word�������¶�ȡ��־')
-    p.add_argument('data');p.add_argument('--output',required=True);p.add_argument('--analysis',help='��run_id��֯�Ĳ���۲�JSON��ÿ��Ϊ����־���ݵĶ�������')
+    p=argparse.ArgumentParser(description='从已采集JSON生成同口径Excel和Word，不重新读取日志')
+    p.add_argument('data');p.add_argument('--output',required=True);p.add_argument('--analysis',help='按run_id组织的补充观察JSON，每项为有日志依据的段落数组')
     a=p.parse_args();export_reports(load(a.data),a.output,load(a.analysis) if a.analysis else None)

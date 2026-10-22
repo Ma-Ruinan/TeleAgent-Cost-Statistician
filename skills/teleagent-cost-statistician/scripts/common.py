@@ -15,10 +15,10 @@ import sys
 
 METRICS = ('seconds', 'llm_calls', 'input_tokens', 'output_tokens', 'cache_rate',
            'tool_calls', 'tool_errors', 'search_calls', 'artifact_count')
-LABELS = ('��ʱ', 'LLM��ɵ�����', '����Token', '���Token', '����������',
-          '���ߵ���', '���ߴ���', '��������', '�����ļ���')
-UNITS = ('ʱ����', '��', '��', '��', '%', '��', '��', '��', '��')
-CONTINUE = {'����', '�����', '����ִ��', '������', '�������', 'continue'}
+LABELS = ('耗时', 'LLM完成调用数', '输入Token', '输出Token', '缓存命中率',
+          '工具调用', '工具错误', '搜索调用', '交付文件数')
+UNITS = ('时分秒', '次', '万', '万', '%', '次', '次', '次', '个')
+CONTINUE = {'继续', '请继续', '继续执行', '接着做', '请接着做', 'continue'}
 
 
 class DataError(ValueError):
@@ -48,7 +48,7 @@ def timezone(name):
     try:
         return ZoneInfo(name)
     except ZoneInfoNotFoundError as exc:
-        raise DataError('ʱ�����ݿⲻ���ã��밲װtzdata��ʹ��Asia/Shanghai��UTC') from exc
+        raise DataError('时区数据库不可用，请安装tzdata或使用Asia/Shanghai、UTC') from exc
 
 
 def iso(ms, tz):
@@ -68,7 +68,7 @@ def task_set(args):
         tasks = load(args.task_manifest)
     else:
         root = Path(args.tasks)
-        candidates = sorted(p for p in root.rglob('*') if p.is_file() and p.name in ('��������.txt', 'question.txt', 'prompt.txt'))
+        candidates = sorted(p for p in root.rglob('*') if p.is_file() and p.name in ('问题描述.txt', 'question.txt', 'prompt.txt'))
         tasks = []
         for p in candidates:
             name = p.parent.name
@@ -77,14 +77,14 @@ def task_set(args):
             title = re.sub(r'^[A-Za-z]+\d+[_\s-]*', '', name) or name
             tasks.append({'id': tid, 'name': title, 'prompt': p.read_text(encoding='utf-8-sig').strip(), 'source': str(p.resolve())})
     if not isinstance(tasks, list) or not tasks:
-        raise DataError('δ�ҵ���Ŀ�����ṩ��������.txtĿ¼�������嵥JSON����')
+        raise DataError('未找到题目。请提供问题描述.txt目录或任务清单JSON数组')
     ids, prompts = set(), set()
     for t in tasks:
         if not all(isinstance(t.get(k), str) and t[k].strip() for k in ('id', 'prompt')):
-            raise DataError('�����嵥ÿ������зǿ�id��prompt')
+            raise DataError('任务清单每项必须有非空id和prompt')
         t.setdefault('name', t['id'])
         if t['id'] in ids or norm(t['prompt']) in prompts:
-            raise DataError('��Ż�淶�����������Ŀ�ظ�����������')
+            raise DataError('题号或规范化后的完整题目重复，需先消歧')
         ids.add(t['id']); prompts.add(norm(t['prompt']))
         t['prompt_sha256'] = hashlib.sha256(norm(t['prompt']).encode()).hexdigest()
     return tasks
@@ -103,7 +103,7 @@ def task_match(text, tasks, strip_scene=False):
     pure = re.sub(r'\s*@scene#\d+:.*$', '', text, flags=re.S) if strip_scene else text
     hits = [t['id'] for t in tasks if norm(t['prompt']) == norm(pure)]
     if len(hits) > 1:
-        raise DataError('ͬһ�û���Ϣƥ������')
+        raise DataError('同一用户消息匹配多道题')
     return hits[0] if hits else None
 
 
@@ -116,18 +116,18 @@ def assign_users(users, session, tasks, mapping, excluded, source, strip_scene=F
         role = manual.get('role', 'new') if manual else None
         continuation = role == 'continue' or (not matched and norm(u['text']).lower() in CONTINUE)
         if role == 'continue' and not root:
-            raise DataError('�˹�ӳ��Ϊ��������Դ��û���������״��ύ')
+            raise DataError('人工映射为继续，但源中没有所属的首次提交')
         if matched and not continuation:
             task, root = matched, u['id']
-            kind = '�����ύ'
+            kind = '初次提交'
         elif continuation and root and (not matched or matched == task):
-            kind = '����ִ��'
+            kind = '继续执行'
         else:
             excluded.append({'session': session, 'message': u['id'], 'source': source,
-                             'reason': 'δƥ��������Ŀ����ȷ����ָ��', 'candidate_root': root, 'time_ms': u['time']})
+                             'reason': '未匹配完整题目或明确继续指令', 'candidate_root': root, 'time_ms': u['time']})
             continue
         if not root:
-            raise DataError('����ָ��δ�ҵ��������ԣ����ṩ������־������ӳ��')
+            raise DataError('继续指令未找到所属测试，需提供更早日志或修正映射')
         yield u, task, root, kind, users[i+1]['time'] if i+1 < len(users) else float('inf')
 
 
@@ -141,7 +141,7 @@ def connection(path):
 
 def number(value, field):
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise DataError(f'{field}��Ҫ�Ǹ�������ʵ��Ϊ{value!r}')
+        raise DataError(f'{field}需要非负整数，实际为{value!r}')
     return value
 
 
@@ -149,7 +149,7 @@ def open_usage(message, evidence):
     t = message.get('tokens')
     if not isinstance(t, dict) or not t:
         return {'input': None, 'output': None, 'cache': None, 'calls': None, 'evidence': evidence,
-                'model': message.get('modelID'), 'warning': '�����������Ϣȱ�������ֶ�'}
+                'model': message.get('modelID'), 'warning': '已完成助手消息缺少用量字段'}
     ca = t.get('cache', {})
     inp = number(t['input'], 'tokens.input') if 'input' in t else None
     out = number(t['output'], 'tokens.output') if 'output' in t else None
@@ -158,10 +158,10 @@ def open_usage(message, evidence):
     total_input = inp + read + write if None not in (inp, read, write) else None
     if t.get('total') is not None and total_input is not None and out is not None:
         if number(t['total'], 'tokens.total') != total_input + out:
-            raise DataError('Token�ϼƹ�ϵ�仯��ֹͣ�������ֵ��' + evidence)
+            raise DataError('Token合计关系变化，停止输出估计值：' + evidence)
     return {'input': total_input, 'output': out, 'cache': read, 'calls': 1,
             'model': message.get('modelID'), 'evidence': evidence,
-            'warning': '�����ֶβ�����' if None in (total_input, out, read) else None}
+            'warning': '用量字段不完整' if None in (total_input, out, read) else None}
 
 
 def sum_known(values):
@@ -177,10 +177,10 @@ def delivery_files(deliveries, directory):
             a = json.loads(a)
         items = a.get('output_paths', a.get('files')) if isinstance(a, dict) else None
         if not isinstance(items, list):
-            raise DataError('�������߲�������·�����飺' + d['id'])
+            raise DataError('交付工具参数不含路径数组：' + d['id'])
         for item in items:
             if not isinstance(item, str):
-                raise DataError('����·�����ͱ仯����Ҫ�˲飺' + d['id'])
+                raise DataError('交付路径类型变化，需要核查：' + d['id'])
             p = Path(item)
             p = (p if p.is_absolute() else Path(directory) / p).resolve()
             key = str(p).casefold()
@@ -194,7 +194,7 @@ def delivery_files(deliveries, directory):
 def segment(product, task, root, kind, user, session, start, end, directory, source,
             usage, tools, deliveries, search_name, tz, retries=None, extra=None, final_text='', errors_complete=True):
     if end is not None and end < start:
-        raise DataError('����ʱ�����ڿ�ʼʱ�䣺' + session)
+        raise DataError('结束时间早于开始时间：' + session)
     counts = collections.Counter(x['name'] for x in tools)
     errs = [x for x in tools if x['failed']]
     inp = sum_known(x['input'] for x in usage)
@@ -220,7 +220,7 @@ def segment(product, task, root, kind, user, session, start, end, directory, sou
             'tools': tools, 'errors': errs, 'retries': retries, 'files': files,
             'models': sorted({x['model'] for x in usage if x.get('model')}),
             'conditions': extra, 'final_text': final_text[-2400:], 'warnings':
-            [x['warning'] for x in usage if x.get('warning')] + ([] if errors_complete else ['�й��ߵ���δ�ҵ���Ӧ��������ߴ�����ȱʧ'])}
+            [x['warning'] for x in usage if x.get('warning')] + ([] if errors_complete else ['有工具调用未找到对应结果，工具错误数缺失'])}
 
 
 def assemble(product, tasks, segments, excluded, args, tz):
@@ -249,7 +249,7 @@ def assemble(product, tasks, segments, excluded, args, tz):
         r['gap_seconds'] = r['values']['seconds']-r['active_seconds'] if None not in (r['values']['seconds'], r['active_seconds']) else None
         r['final_text'] = last['final_text']; r['segment_count'] = len(ss)
         r['segments'] = ss
-        r['status'] = '��¼������' if last['end_ms'] is None else ('�н�����¼���ҵ������ļ�' if r['values']['artifact_count'] else '�н�����¼��δ�ҵ��Ǽǽ���')
+        r['status'] = '记录不完整' if last['end_ms'] is None else ('有结束记录且找到交付文件' if r['values']['artifact_count'] else '有结束记录但未找到登记交付')
         r['task_name'] = next(t['name'] for t in tasks if t['id'] == r['task'])
         runs.append(r)
     runs.sort(key=lambda r: (next(i for i,t in enumerate(tasks) if t['id']==r['task']), r['start_ms'], r['source'], r['root_user']))
@@ -264,15 +264,15 @@ def assemble(product, tasks, segments, excluded, args, tz):
         for o in load(args.observations):
             selectors = ('run_id', 'session', 'user_message')
             if not any(o.get(k) for k in selectors):
-                raise DataError('ҳ��۲������run_id��session��user_message�Զ�λ')
+                raise DataError('页面观察需给出run_id、session或user_message以定位')
             hits = [r for r in runs if all(not o.get(k) or r[k] == o[k] for k in selectors)]
             if len(hits) != 1:
-                raise DataError('ҳ��۲�δΨһ��λһ�β��ԣ��������õ�������')
+                raise DataError('页面观察未唯一定位一次测试，不能套用到其他次')
             if not o.get('evidence'):
-                raise DataError('ҳ��۲���Ҫע��evidence��Դ')
+                raise DataError('页面观察需要注明evidence来源')
             hits[0].setdefault('page_observations', []).append(o)
             if o.get('outcome') == 'refused':
-                hits[0]['status'] = '�ܴ�' + hits[0]['status']
+                hits[0]['status'] = '拒答；' + hits[0]['status']
     means = {}
     for key in METRICS:
         by_task = {}
@@ -291,20 +291,20 @@ def assemble(product, tasks, segments, excluded, args, tz):
 
 
 def run_cli(product, collector, source_default, method):
-    parser = argparse.ArgumentParser(description=product+'ִ�й���ͳ�ƣ�����Ӧ����־ֻ��')
+    parser = argparse.ArgumentParser(description=product+'执行过程统计，所有应用日志只读')
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--tasks', help='������������.txt����ĿĿ¼')
-    group.add_argument('--task-manifest', help='[{id,name,prompt}]�����嵥')
-    parser.add_argument('--workspace', action='append', required=True, help='����Ŀ¼�����θ�Ŀ¼���ɶ�θ���')
-    parser.add_argument('--db', help='��ʽָ��SQLiteԴ�������ݿ��Ͳɼ���ʹ��')
-    parser.add_argument('--logs-root', help='��ʽָ���ỰJSONL��Ŀ¼')
-    parser.add_argument('--session', action='append', default=[], help='�޶��ỰID���ɶ�θ���')
-    parser.add_argument('--date', help='��������ʱ���д����ڿ�ʼ�Ķ������ԣ�Ĭ�ϲ������ڽض�')
+    group.add_argument('--tasks', help='包含问题描述.txt的题目目录')
+    group.add_argument('--task-manifest', help='[{id,name,prompt}]任务清单')
+    parser.add_argument('--workspace', action='append', required=True, help='工作目录或批次父目录，可多次给出')
+    parser.add_argument('--db', help='显式指定SQLite源，仅数据库型采集器使用')
+    parser.add_argument('--logs-root', help='显式指定会话JSONL根目录')
+    parser.add_argument('--session', action='append', default=[], help='限定会话ID，可多次给出')
+    parser.add_argument('--date', help='仅保留该时区中此日期开始的独立测试，默认不按日期截断')
     parser.add_argument('--timezone', default='Asia/Shanghai')
-    parser.add_argument('--mapping', help='�˹���ʵ�ĻỰ���û���Ϣ�����ӳ��JSON')
-    parser.add_argument('--observations', help='�˹�ȷ�ϵ�ҳ��״̬��֤��JSON')
-    parser.add_argument('--output', required=True, help='���ؽ��Ŀ¼')
-    parser.add_argument('--collect-only', action='store_true', help='�����ԭʼ��λJSON������report.py�������')
+    parser.add_argument('--mapping', help='人工核实的会话、用户消息、题号映射JSON')
+    parser.add_argument('--observations', help='人工确认的页面状态及证据JSON')
+    parser.add_argument('--output', required=True, help='本地结果目录')
+    parser.add_argument('--collect-only', action='store_true', help='仅输出原始单位JSON，再由report.py输出报告')
     args = parser.parse_args()
     try:
         tz = timezone(args.timezone)
@@ -314,7 +314,7 @@ def run_cli(product, collector, source_default, method):
         for m in load(args.mapping) if args.mapping else []:
             key = (m['session'], m['user_message'])
             if key in mapping or m['task_id'] not in {t['id'] for t in tasks} or m.get('role', 'new') not in ('new', 'continue'):
-                raise DataError('�˹�ӳ�京�ظ��δ֪��Ż���Чrole')
+                raise DataError('人工映射含重复项、未知题号或无效role')
             mapping[key] = m
         source = source_default(args)
         def collect():
@@ -322,22 +322,22 @@ def run_cli(product, collector, source_default, method):
             return assemble(product, tasks, ss, excluded, args, tz)
         data = collect(); second = collect()
         if canonical(data) != canonical(second):
-            raise DataError('���ζ�ȡ��������仯�������������ֹͣд������²ɼ�')
+            raise DataError('两次读取结果发生变化。请待本批任务停止写入后重新采集')
         if not data['runs']:
-            raise DataError('û��ƥ�����񣬼�鹤��Ŀ¼����Ŀ�ı������ڡ��˺����ݿ���˹�ӳ��')
+            raise DataError('没有匹配任务，检查工作目录、题目文本、日期、账号数据库或人工映射')
         data['meta'] = {'collected_at': dt.datetime.now(tz).isoformat(timespec='seconds'),
                         'timezone': args.timezone, 'scope': args.workspace, 'date_filter': args.date,
                         'source': str(source), 'read_twice_equal': True, 'method': method,
                         'snapshot_sha256': hashlib.sha256(canonical(data).encode()).hexdigest()}
         output = Path(args.output); output.mkdir(parents=True, exist_ok=True)
-        target = output/(product+'_ִ������.json')
+        target = output/(product+'_执行数据.json')
         dump(target, data)
         if not args.collect_only:
             from report import export_reports
             export_reports(data, output)
-        print(f"{product}: {len(data['runs'])}�ζ������ԣ�{sum(r['segment_count'] for r in data['runs'])}��ִ�жΣ����ζ�ȡһ��")
+        print(f"{product}: {len(data['runs'])}次独立测试，{sum(r['segment_count'] for r in data['runs'])}个执行段；两次读取一致")
         print(target.resolve())
     except (DataError, OSError, sqlite3.Error, json.JSONDecodeError, KeyError) as exc:
-        print(f'�ɼ�ֹͣ��{exc}', file=sys.stderr)
+        print(f'采集停止：{exc}', file=sys.stderr)
         return 2
     return 0

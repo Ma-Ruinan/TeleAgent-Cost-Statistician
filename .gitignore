@@ -8,6 +8,6 @@ __pycache__/
 *.jsonl
 *.xlsx
 *.docx
-*_ִ������.json
+*_执行数据.json
 local-results/
 outputs/

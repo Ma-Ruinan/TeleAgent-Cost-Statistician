@@ -1,4 +1,4 @@
 interface:
-  display_name: "TeleAgent����ָ��ͳ��"
-  short_description: "��ȡ������־ͳ�ƾ���ִ��ָ�꣬�����ظ����в����ɿɻز�� Excel �� Word"
-  default_prompt: "ʹ�� $teleagent-cost-statistician �ɼ�ָ�����������ִ����־�����ɾ������ָ�� Excel ������۲� Word��"
+  display_name: "TeleAgent过程指标统计"
+  short_description: "读取测试日志统计九项执行指标，保留重复运行并生成可回查的 Excel 和 Word"
+  default_prompt: "使用 $teleagent-cost-statistician 采集指定测试任务的执行日志，生成九项过程指标 Excel 和问题观察 Word。"
