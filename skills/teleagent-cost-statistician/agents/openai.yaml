@@ -1,0 +1,4 @@
+interface:
+  display_name: "TeleAgent����ָ��ͳ��"
+  short_description: "��ȡ������־ͳ�ƾ���ִ��ָ�꣬�����ظ����в����ɿɻز�� Excel �� Word"
+  default_prompt: "ʹ�� $teleagent-cost-statistician �ɼ�ָ�����������ִ����־�����ɾ������ָ�� Excel ������۲� Word��"

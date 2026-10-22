@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite*
+*.jsonl
+*.xlsx
+*.docx
+*_ִ������.json
+local-results/
+outputs/
