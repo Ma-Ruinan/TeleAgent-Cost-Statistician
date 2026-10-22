@@ -6,6 +6,26 @@ from common import (DataError, assign_users, connection, date_selected, in_scope
 from agent_tree import enrich
 
 
+def completed_response(message):
+    return message.get('role')=='assistant' and bool(message.get('time',{}).get('completed')) and bool(message.get('finish'))
+
+
+def execution_finished(assistants):
+    later_completed=False
+    for message in reversed(assistants):
+        if completed_response(message):
+            later_completed=True
+            continue
+        times=message.get('time',{});created=times.get('created')
+        # A closed, instantaneous placeholder preceding a real completion is not an
+        # unfinished LLM call. Keep trailing placeholders and actual errors incomplete.
+        transition=(later_completed and message.get('finish') is None and not message.get('error')
+                    and isinstance(created,int) and not isinstance(created,bool)
+                    and times.get('completed')==created)
+        if not transition:return False
+    return later_completed
+
+
 class SQLiteTree:
     def __init__(self,db,source,product,search,delivery,tz):
         self.db=db;self.source=str(source);self.product=product;self.search=search;self.delivery=delivery;self.tz=tz
@@ -64,7 +84,7 @@ class SQLiteTree:
         allm,allp=self.records(node);info=self.nodes[node]
         mm=[m for m in allm if start<=m['time_created']<until]
         pp=[p for p in allp if start<=p['time_created']<until]
-        completed=[m for m in mm if m['json'].get('role')=='assistant' and m['json'].get('time',{}).get('completed') and m['json'].get('finish')]
+        completed=[m for m in mm if completed_response(m['json'])]
         end=max((m['json']['time']['completed'] for m in completed),default=None)
         if end is not None and end>until:raise DataError('执行跨越另一独立任务或委派窗口：'+node)
         usage=[]
@@ -104,8 +124,8 @@ class SQLiteTree:
         text=next((p['json'].get('text','') for p in reversed(pp) if p['message_id'] in assistant_ids and p['json'].get('type')=='text'),'')
         value=segment(self.product,task,root,kind,user,node,start,end,info['directory'],self.source,usage,tools,deliveries,self.search,self.tz,
                       retries=retries,final_text=text,errors_complete=errors_complete)
-        assistants=[m for m in mm if m['json'].get('role')=='assistant']
-        value['_terminal']=bool(completed) and errors_complete and all(m['json'].get('time',{}).get('completed') and m['json'].get('finish') for m in assistants)
+        assistants=[m['json'] for m in mm if m['json'].get('role')=='assistant']
+        value['_terminal']=errors_complete and execution_finished(assistants)
         value['_node']=node;value['_until']=until
         return value
 
