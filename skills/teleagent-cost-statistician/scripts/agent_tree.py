@@ -21,14 +21,14 @@ def enrich(segments, store, search):
     owners={};incoming=collections.defaultdict(list)
     for node in store.nodes:
         for edge in store.edges(node):
-            if edge.get('child'):incoming[edge['child']].append((node,edge['time']))
+            if edge.get('child'):incoming[edge['child']].append((node,edge.get('child_start_ms',edge['time'])))
     for identity,ss in groups.items():
         ss.sort(key=lambda x:x['start_ms']);root=ss[0]['_node'];lo=ss[0]['start_ms'];hi=ss[-1]['_until']
         for s in ss:
             if s['end_ms'] is not None and not s.get('_terminal',True):
                 s['last_completed_ms']=s['end_ms'];s['end_ms']=None;s['end']=None;s['values']['seconds']=None
                 s['warnings'].append('主Agent执行缺少完整结束记录')
-        issues=[];links=[];pieces=[];visited=set();active=set();windows=collections.defaultdict(list);link_keys=set()
+        issues=[];links=[];pieces=[];visited=set();active=set();windows=collections.defaultdict(list);link_keys=set();uncertain=collections.defaultdict(list)
         related={root};pending=[root]
         while pending:
             current=pending.pop()
@@ -52,23 +52,26 @@ def enrich(segments, store, search):
             if depth:
                 windows[node].append((lower,upper,depth,parent))
             for edge in store.edges(node):
-                if not lower<=edge['time']<upper:continue
+                if not lower<=edge.get('owner_time_ms',edge['time'])<upper:continue
                 target=edge.get('child')
+                child_lower=max(lower,edge.get('child_start_ms',edge['time']))
                 link_key=(node,edge.get('call'),edge['time'],edge['evidence'])
                 if link_key not in link_keys:
                     links.append({'parent':node,'child':target,'call':edge.get('call'),
-                                  'time_ms':edge['time'],'evidence':edge['evidence'],'depth':depth+1})
+                                  'time_ms':edge['time'],'window_start_ms':child_lower,'evidence':edge['evidence'],'depth':depth+1})
                     link_keys.add(link_key)
                 if not target:
                     if not edge.get('not_started'):
                         issues.append({'reason':'委派调用未能定位子日志','parent':node,'evidence':edge['evidence']})
                     continue
+                if edge.get('boundary_uncertain_from_ms') is not None:
+                    uncertain[target].append({'from':max(lower,edge['boundary_uncertain_from_ms']),'until':child_lower,'parent':node,'evidence':edge['evidence']})
                 # Messages within one test may overlap an active invocation. Only another
                 # independent owner cuts its window; overlapping windows are read once below.
-                future=min((time for owner,time in incoming[target] if owner not in related and time>=edge['time']),default=float('inf'))
+                future=min((time for owner,time in incoming[target] if owner not in related and time>=child_lower),default=float('inf'))
                 upper_child=min(upper,future)
                 if edge.get('resume') and target in active:continue
-                walk(target,edge['time'],upper_child,depth+1,node)
+                walk(target,child_lower,upper_child,depth+1,node)
             active.remove(node)
 
         walk(root,lo,hi,0)
@@ -78,6 +81,14 @@ def enrich(segments, store, search):
                 if merged and lower<=merged[-1][1]:
                     merged[-1][1]=max(merged[-1][1],upper)
                 else:merged.append([lower,upper,depth,parent])
+            for candidate in uncertain[node]:
+                cursor=candidate['from']
+                for start,end,_,_ in merged:
+                    if start>cursor:break
+                    cursor=max(cursor,end)
+                    if cursor>=candidate['until']:break
+                if cursor<candidate['until']:
+                    issues.append({'reason':'子执行起点缺少唯一归属证据','node':node,'parent':candidate['parent'],'evidence':candidate['evidence']})
             for lower,upper,depth,parent in merged:
                 piece=store.piece(node,lower,upper)
                 pieces.append((node,depth,parent,piece,lower,upper))

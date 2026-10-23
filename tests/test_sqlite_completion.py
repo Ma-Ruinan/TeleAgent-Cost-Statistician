@@ -19,7 +19,7 @@ class CompletionTests(unittest.TestCase):
             modelID='synthetic',tokens={'input':111,'output':22,'cache':{'read':33,'write':0},'total':166})
         if error:message['error']=error
         with closing(sqlite3.connect(self.source)) as db:
-            db.execute('INSERT INTO message VALUES(?,?,?,?)',(node+'-transition',node,at,json.dumps(message)))
+            db.execute('INSERT OR REPLACE INTO message VALUES(?,?,?,?)',(node+'-transition',node,at,json.dumps(message)))
             db.commit()
 
     def assert_incomplete(self,data):
@@ -51,8 +51,28 @@ class CompletionTests(unittest.TestCase):
         self.add_unfinished('c1',1199,error={'name':'SyntheticFailure'})
         self.assert_incomplete(self.case.collect(self.source))
 
-    def test_noninstant_unfinished_message_stays_incomplete(self):
-        self.add_unfinished('c1',1150,duration=10)
+    def test_closed_intermediate_messages_have_no_duration_threshold(self):
+        baseline=self.case.collect(self.source)
+        for duration in (230,247,362,744,5000):
+            with self.subTest(duration=duration):
+                self.add_unfinished('c1',1150,duration=duration)
+                actual=self.case.collect(self.source)
+                self.assertEqual(actual['runs'][0]['values'],baseline['runs'][0]['values'])
+                self.assertEqual(actual['summary'],baseline['summary'])
+
+    def test_intermediate_missing_completion_stays_incomplete(self):
+        self.add_unfinished('c1',1150)
+        with closing(sqlite3.connect(self.source)) as db:
+            value=json.loads(db.execute("SELECT data FROM message WHERE id='c1-transition'").fetchone()[0])
+            value['time'].pop('completed');db.execute("UPDATE message SET data=? WHERE id='c1-transition'",(json.dumps(value),));db.commit()
+        self.assert_incomplete(self.case.collect(self.source))
+
+    def test_intermediate_ending_after_final_response_stays_incomplete(self):
+        self.add_unfinished('c1',1150,duration=10000)
+        self.assert_incomplete(self.case.collect(self.source))
+
+    def test_invalid_completion_order_stays_incomplete(self):
+        self.add_unfinished('c1',1150,duration=-1)
         self.assert_incomplete(self.case.collect(self.source))
 
     def test_transition_does_not_hide_running_tool(self):

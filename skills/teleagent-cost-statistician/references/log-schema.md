@@ -4,7 +4,7 @@
 
 先核实 users 下哪个账号数据库包含目标题目的主会话；存在多个数据库时必须显式指定 --db。多个任务可能共用一个工作空间，不能按目录把全部后台消息都算入测试。
 
-message.data 中使用 role、time.created、time.completed、finish、modelID、tokens。累计输入为 tokens.input + tokens.cache.read + tokens.cache.write；输出为 tokens.output；缓存读取为 tokens.cache.read。存在 tokens.total 时核对合计关系。part 中 step-finish 不重复累计。 只把具有完成时间和 finish 的助手消息计为LLM完成调用。finish为空、完成时间等于创建时间、无错误且后续有正常完成消息的瞬时过渡记录，不计入调用与Token，也不影响结束判断；尾部未完成消息和运行中工具仍按记录不完整处理。
+message.data 中使用 role、time.created、time.completed、finish、modelID、tokens。累计输入为 tokens.input + tokens.cache.read + tokens.cache.write；输出为 tokens.output；缓存读取为 tokens.cache.read。存在 tokens.total 时核对合计关系。part 中 step-finish 不重复累计。只把具有完成时间和 finish 的助手消息计为LLM完成调用。finish为空但有合法完成时间、无错误，且同一执行窗口内的后续正常完成记录覆盖其结束时间的中间记录，不计入调用与Token，也不影响结束判断；不设置毫秒阈值。尾部未完成消息、无完成时间和运行中工具仍按记录不完整处理。明确标记为自动compaction或synthetic文本的纯内部用户消息不拆分测试；混有普通文本、附件或未知类型的真实消息仍保留。
 
 工具记录为 part.data 的 type=tool、callID、tool、state.status、state.metadata.exit、state.time。工具错误按错误状态或非零退出码识别，网页 HTTP 错误、超时、截图文件缺失、写入路径不存在等保留原始摘要及 part 标识。
 
@@ -17,3 +17,5 @@ message.data 中使用 role、time.created、time.completed、finish、modelID�
 模型记录按原始消息或请求标识去重；工具按调用标识及调用时间去重，防止同一执行在父摘要、子日志中重复累计，也避免不同时间复用局部标识被合并。父工具结果中的汇总Token不重复累加。无法唯一归属或标识内容冲突时停止猜测值。
 
 同一批数据默认读取两次并比较。若仍在写入、读取不一致或Token恒等关系变化，脚本停止并返回非零退出码；应查明实际记录后重跑，不能补猜测值。目录时间、session更新时间和数据库费用零值都不替代已核实的字段。
+
+委派记录和工具part按所属模型message归属执行窗口，不以迟写的part时间重新分配测试。优先使用位于父消息至工具完成之间的实际调用开始时间；初建子会话仅在首次引用、父子关系、创建和首条记录均有父消息时间证据时回溯到实际起点；复用可按本次完整委派prompt唯一匹配的子用户消息补齐，不回退到旧历史。若边界前仍有可能属于本次调用的记录，且合并同一任务的各次窗口后仍未覆盖，保留缺失总数及已观察值。原委派时间与实际窗口起点保留在JSON。
