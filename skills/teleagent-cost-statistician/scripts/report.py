@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import xml.etree.ElementTree as E
 from zipfile import ZipFile, ZIP_DEFLATED
-from common import METRICS, LABELS, UNITS, load, timezone, sum_known, task_source
+from common import METRICS, LABELS, UNITS, load, timezone, sum_known, task_source, task_identity
 
 S = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -188,6 +188,7 @@ def excel_report(data,path):
             ('Agent明细',agents,[25,12,12,10,44,60,20,22,22,22,18,18,18,20,80,65],1,1),
             ('口径与来源',method,[27,14,115],0,None)]
     sources={t['id']:task_source(t) for t in data['tasks']}
+    identities={t['id']:task_identity(t,strict=True) for t in tasks}
     def shift_reference(match):
         letters=match.group(2);number=0
         for ch in letters: number=number*26+ord(ch)-64
@@ -202,9 +203,20 @@ def excel_report(data,path):
                 elif i>header and len(row)>1:
                     task_id=row[index]
                     row.insert(index,sources.get(task_id) if isinstance(task_id,str) else None)
+                    if isinstance(task_id,str) and task_id in identities:
+                        row[index+1]=identities[task_id][0]
+                        if name=='任务均值': row[index+2]=identities[task_id][1]
                 for cell in row:
                     if isinstance(cell,dict) and cell.get('f'):
                         cell['f']=re.sub(r'(\$?)([A-Z]+)(\$?\d+)',shift_reference,cell['f'])
+            if name=='任务均值':
+                for row_number in range(7,7+len(tasks)):
+                    row=rows[row_number-1]
+                    criteria=f'{rg("B")},A{row_number},{rg("C")},B{row_number}'
+                    row[3]['f']=f'COUNTIFS({criteria})'
+                    for metric in range(len(METRICS)):
+                        rr=rg(col(8+metric));n=f'COUNTIFS({criteria},{rr},"<>")'
+                        row[4+metric]['f']=f'IF({n}=0,"未取得",SUMIFS({rr},{criteria})/{n})'
             widths=list(widths);widths.insert(index,20)
         adjusted.append((name,rows,widths,freeze,autofilter))
     sheets=adjusted

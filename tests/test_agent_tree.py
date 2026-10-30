@@ -23,6 +23,7 @@ class AgentTreeTests(unittest.TestCase):
         self.at=1700000000000;self.search='WebSearch' if adapter.PRODUCT=='WorkBuddy' else adapter.SEARCH_TOOL
         self.delivery='present_files' if adapter.PRODUCT=='WorkBuddy' else adapter.DELIVERY_TOOL
         self.tasks=[dict(id='Q1',name='Synthetic question',prompt='Synthetic full question.')]
+        self.tasks[0].update(task_folder='1_Synthetic question',dimension_number=1)
         self.args=argparse.Namespace(workspace=[str(self.workspace)],session=['root'],date=None,observations=None)
         self.nodes={}
         self.node('root',None,0,self.tasks[0]['prompt'],500,20000,100,300,10)

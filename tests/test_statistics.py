@@ -25,6 +25,7 @@ class StatisticsTests(unittest.TestCase):
         self.workspace=self.root/'workspace';self.workspace.mkdir()
         (self.workspace/'result.txt').write_text('synthetic result',encoding='utf8')
         self.tasks=[{'id':'Q1','name':'Synthetic task','prompt':'Find a primary source.'}]
+        self.tasks[0].update(task_folder='1_Synthetic question',dimension_number=1)
         self.args=argparse.Namespace(workspace=[str(self.workspace)],session=[],date=None,observations=None)
         self.tz=dt.timezone.utc;self.start=1700000000000
 

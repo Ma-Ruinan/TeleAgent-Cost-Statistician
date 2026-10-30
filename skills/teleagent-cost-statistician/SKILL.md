@@ -51,3 +51,5 @@ python <skill目录>/scripts/report.py "本地结果目录/TeleAgent_执行数�
 最终交付 `TeleAgent_过程指标统计.xlsx`、`TeleAgent_过程问题与采集方法.docx`，保留 `TeleAgent_执行数据.json`。耗时使用时分秒，Token以万为单位；均值和有效样本数逐指标列出。交付时列明完整数据集、实际工作空间、已应用的日期条件、覆盖题数、未匹配题目、保存位置及未完成事项。无法产生统计文件时保存本地采集说明并说明原因，不宣称采集完成。真实日志和运行结果保持在本地。
 
 题目来源统一为综合能力、AlphaData、DeepInsight，优先读取任务清单的 dataset_source，其次从 dataset、dimension 或题目源文件路径识别。清单模式应保留来源信息；无法确认时记录未识别，不根据题目内容猜测。Excel 在题号左侧列出题目来源，JSON 保留 dataset_source，便于跨对象合并。
+
+题号严格使用维度序号-题目序号（例如1-5），题目严格取原始题目文件夹去掉编号前缀后的名称，不添加括号说明。清单必须保留原始题目文件路径source；缺失时由Agent在指定数据集中按完整题目定位并补齐，再生成报告，不根据AD-5等人工标签猜维度。无源文件路径时可提供准确的task_folder与dimension_number。内部id仅用于关联日志，展示题号使用task_number；跨数据集合并以题目来源和task_number联合识别。
