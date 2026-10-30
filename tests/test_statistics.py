@@ -86,8 +86,8 @@ class StatisticsTests(unittest.TestCase):
             self.assertIsNone(z.testzip())
             ns={'s':report.S};sheet=E.fromstring(z.read('xl/worksheets/sheet2.xml'))
             cells={c.attrib['r']:c for c in sheet.findall('.//s:c',ns)}
-            self.assertAlmostEqual(float(cells['G2'].find('s:v',ns).text),17/86400)
-            self.assertAlmostEqual(float(cells['I2'].find('s:v',ns).text),.08)
+            self.assertAlmostEqual(float(cells['H2'].find('s:v',ns).text),17/86400)
+            self.assertAlmostEqual(float(cells['J2'].find('s:v',ns).text),.08)
             self.assertIn('时',z.read('xl/styles.xml').decode())
             for name in z.namelist():
                 if name.endswith('.xml') or name.endswith('.rels'):E.fromstring(z.read(name))

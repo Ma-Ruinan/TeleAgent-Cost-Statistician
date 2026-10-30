@@ -63,6 +63,15 @@ def norm(text):
     return re.sub(r'\s+', '', text)
 
 
+def task_source(task):
+    for field in ('dataset_source', 'dataset', 'dimension', 'source'):
+        text = str(task.get(field) or '').casefold()
+        if 'alphadata' in text: return 'AlphaData'
+        if 'deepinsight' in text: return 'DeepInsight'
+        if any(label in text for label in ('综合能力', '常规能力')): return '综合能力'
+    return '未识别'
+
+
 def task_set(args):
     if args.task_manifest:
         tasks = load(args.task_manifest)
@@ -83,6 +92,7 @@ def task_set(args):
         if not all(isinstance(t.get(k), str) and t[k].strip() for k in ('id', 'prompt')):
             raise DataError('任务清单每项必须有非空id和prompt')
         t.setdefault('name', t['id'])
+        t['dataset_source'] = task_source(t)
         if t['id'] in ids or norm(t['prompt']) in prompts:
             raise DataError('题号或规范化后的完整题目重复，需先消歧')
         ids.add(t['id']); prompts.add(norm(t['prompt']))
@@ -267,6 +277,7 @@ def assemble(product, tasks, segments, excluded, args, tz):
             partial_cache = sum_known(u['cache'] for u in r['usage_records'])
             r['observed_partial']['cache_rate'] = partial_cache/partial_input if partial_input and partial_cache is not None else None
         r['task_name'] = next(t['name'] for t in tasks if t['id'] == r['task'])
+        r['dataset_source'] = task_source(next(t for t in tasks if t['id'] == r['task']))
         runs.append(r)
     runs.sort(key=lambda r: (next(i for i,t in enumerate(tasks) if t['id']==r['task']), r['start_ms'], r['source'], r['root_user']))
     counters = collections.Counter()
